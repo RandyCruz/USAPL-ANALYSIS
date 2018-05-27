@@ -1,0 +1,238 @@
+---
+title: "USA POWERLIFTING"
+output: html_notebook
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(tidyverse)
+library(Zelig)
+library(texreg)
+library(mvtnorm)
+library(radiant.data)
+library(sjmisc)
+library(lattice)
+library(dplyr)
+library(ggplot2)
+library(ZeligChoice)
+library(survival)
+library(sf)
+library(spdep)
+library(data.world)
+library(tmaptools)
+library(printr)
+library(stargazer)
+library(plotly)
+library(knitr)
+library(readxl)
+library(grid)
+library(gridExtra)
+library(tidyverse)
+library(magrittr)
+library(Amelia)
+library(lme4)
+library(gtools)
+library(tinytex)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+usapl <- read_csv("/Users/racruz/Desktop/usapl.csv")
+head(usapl)
+summarise(usapl)
+```
+
+
+```{r}
+str(usapl)
+```
+
+
+```{r}
+missmap(usapl, main = "Missing values vs observed")
+```
+
+
+
+```{r}
+library(VIM)
+aggr_plot <- aggr(usapl, col=c('salmon','light green'), numbers=TRUE, sortVars=TRUE, labels=names(usapl), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+
+```{r warning=FALSE}
+ggplot(usapl,
+aes(x=Age,y=Wilks,color=BodyweightKg)) +
+geom_point(cex=.7) +
+facet_wrap(~Sex) +
+scale_color_gradient2(guide="colourbar",low = "cyan", mid ="cyan1", high = "yellow") +
+ggtitle("How age impacts WILKS by Gender")+
+labs(y="Wilks",x="Age")+
+theme(axis.title=element_text(size=16),
+axis.text=element_text(size=10),
+plot.title=element_text(size=15))
+```
+
+
+
+
+```{r warning=FALSE}
+ggplot(usapl,
+aes(x=Age,y=Wilks,color=BodyweightKg)) +
+geom_point(cex=.7) +
+facet_wrap(~Equipment) +
+scale_color_gradient2(guide="colourbar",low = "yellow", mid  = "gold", high ="green") +
+ggtitle("How age impacts WILKS by Equipment Use")+
+labs(y="Wilks",x="Age")+
+theme(axis.title=element_text(size=16),
+axis.text=element_text(size=10),
+plot.title=element_text(size=15))
+```
+
+
+
+```{r}
+library(plyr)
+# The following two lines are equivalent:
+usapl$Sex <- revalue(usapl$Sex, c("F"="0", "M"="1"))
+```
+
+
+```{r}
+##Correlation MATRIX
+usapl <- na.omit(usapl)
+```
+
+
+```{r}
+library(corrplot)
+numeric.var <- sapply(usapl, is.numeric)
+corr.matrix <- cor(usapl[,numeric.var])
+corrplot(corr.matrix, main="\n\nCorrelation Plot for Numerical Variables", method="number")
+```
+
+
+```{r}
+usapl <- usapl %>%
+  mutate(Sex = as.factor(Sex),
+         Wilks = as.numeric(Wilks),
+         McCulloch = as.numeric(McCulloch),
+         Equipment = as.factor(Equipment))
+```
+
+```{r}
+library(nlme)
+lm1 <- lm(Wilks ~ Age + Sex + Equipment, data = usapl)
+plot(lm1)
+summary(lm1, digits = 7)
+visreg::visreg(lm1)
+
+```
+
+```{r}
+library(GGally)
+library(broom)
+
+
+lmg <- GGally::ggcoef(lm1, exponentiate = TRUE, color = "light green", size = 5, shape = 18, alpha = 0.9) 
+
+lmg
+```
+
+
+
+
+```{r}
+lm2 <- lm(McCulloch ~ Age + Sex + Equipment, data = usapl)
+plot(lm2)
+summary(lm2, digits = 7)
+visreg::visreg(lm2)
+```
+
+
+
+```{r}
+
+lmc <- GGally::ggcoef(lm2, color = "salmon", size = 5, shape = 18, alpha = 0.9) 
+
+lmc
+```
+
+
+
+```{r}
+pl <- lm(TotalKg ~ Age + BodyweightKg + Sex + Equipment, data = usapl)
+summary(pl)
+plot(pl)
+visreg::visreg(pl)
+```
+
+```{r}
+lmp <- GGally::ggcoef(pl, color = "gold", size = 5, shape = 18, alpha = 0.9)
+
+lmp
+```
+
+
+```{r}
+anova(lm1, test = "f")
+anova(lm2, test = "f")
+anova(pl ,test = "f")
+```
+
+
+
+```{r}
+model1 <- zelig(Wilks ~ Age + Sex + Equipment, model = "ls", data = usapl, cite = F)
+
+summary(model1)
+```
+
+```{r}
+x.male <- setx(model1, Sex = 1)
+x.female<- setx(model1, Sex = 0)
+```
+
+```{r}
+s.multi <- sim(model1, x = x.female, x1 = x.male)
+summary(s.multi)
+```
+
+```{r}
+graphics.off()
+ par("mar")
+ par(mar=c(1,1,1,1))
+plot(s.multi)
+```
+
+
+```{r}
+fd <- s.multi$get_qi(xvalue="x1", qi="fd")
+summary(fd)
+```
+
+```{r}
+dfd <- as.data.frame(cbind(fd))
+head(dfd)
+```
+
+```{r}
+library(tidyr)
+
+tidd <- dfd %>% 
+  gather(Sex, simv, 1:1)
+head(tidd)
+```
+
+```{r}
+tidd %>% 
+  group_by(Sex) %>% 
+  summarise(mean = mean(simv), sd = sd(simv))
+```
+
+```{r}
+ggplot(tidd, aes(simv)) + geom_histogram(color = "grey", fill = "gold", alpha = .9) + theme_dark() + ggtitle("Estimated First Diffrences of Male WILKS in Powerlifting")
+```
+
+
+
+
